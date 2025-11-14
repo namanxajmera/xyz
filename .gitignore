@@ -1,7 +1,110 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock (optional - some keep it, some don't)
+# Cargo.lock is usually committed for applications but ignored for libraries
+# Keeping it commented out - commit Cargo.lock for reproducible builds
+# Cargo.lock
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# IDEs and Editors
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
 # Claude Code files
 logs/
 .claude/
 
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-# Added by cargo
-/target
+# Test coverage
+tarpaulin-report.html
+cobertura.xml
+
+# Profiling
+perf.data
+perf.data.old
+flamegraph.svg
+*.prof
+
+# Documentation build artifacts
+/docs/_build/
+/docs/.doctrees/
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+*.temp
+
+# Local configuration
+config.local.toml
+*.local
+
+# Cache directories
+.cache/
+
+# Build directories
+dist/
+build/
+
+# Compiled output for different targets
+/target-*/
