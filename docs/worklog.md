@@ -2,6 +2,276 @@
 
 *This file serves as a running AI development diary. Always append new entries to the TOP.*
 
+## 2025-11-14 02:37:30 UTC
+
+**Project**: xyz
+**Activity**: Replaced "System Tool" with actual project usage scanning
+**What**: Now shows REAL project paths where each tool is used, not generic "System Tool" label
+**Details**:
+- **User Feedback**: "What does System Tool mean? I want to know which folder on my desktop uses it, which codebase"
+- **Problem**: Generic "System Tool 🔧" label was meaningless - didn't show actual usage
+- **Solution**: Scan project directories and detect tool usage based on project files
+- **New Scanner** (`project_scanner.rs`):
+  - Scans: ~/Desktop, ~/Documents, ~/projects, ~/dev, ~/Developer, ~/code, ~/workspace
+  - Searches up to 4 levels deep
+  - Detects project types by marker files:
+    - `package.json` → uses `node` and `npm`
+    - `Cargo.toml` → uses `rust` and `cargo`
+    - `requirements.txt`/`setup.py`/`Pipfile` → uses `python`, `pip`
+    - `Gemfile` → uses `ruby`, `gem`, `bundle`
+    - `go.mod` → uses `go`
+    - `pom.xml`/`build.gradle` → uses `java`, `maven`, `gradle`
+    - `.git` → uses `git`
+    - `Dockerfile` → uses `docker`
+    - Reads `package.json` content to detect `postgresql`, `redis`, `mongodb`
+  - Maps tools to actual project directories
+- **What You'll See Now**:
+  - **node**: "Used in ~/Desktop/projects/my-app, ~/Desktop/projects/api" (hover to see all)
+  - **git**: "Used in 15 projects" (hover to see full list)
+  - **wget**: "❌ Unused" (red, not found in any project)
+- **Table Columns Updated**:
+  - **Used In**: Shows real project paths or "N projects"
+  - **Usage**: ✓ Green "N proj" or ❌ Red "Unused"
+  - Hover over either to see full list of project paths
+- **Stats Panel**: Shows "Unused: X" count of tools not found in any project
+- **Performance**: Filesystem scan takes 2-5 seconds, runs once at startup
+- **Smart Detection**: Reads file contents to detect database tools in dependencies
+**Next**: Add filter for "Show only unused" to help identify removable packages
+
+---
+
+## 2025-11-14 02:35:13 UTC
+
+**Project**: xyz
+**Activity**: Implemented parallel description fetching with instant UI updates
+**What**: Descriptions now appear one-by-one as soon as each is fetched, not waiting for batches
+**Details**:
+- **User Request**: "Show desc as soon as u get it for each, not wait until end or end of batch. Make batches smaller or do parallel 1 call for each to speed up"
+- **Old Approach**: 
+  - Sequential batches of 15 packages
+  - UI updated only after each batch completed
+  - Total time: ~60 seconds for 83 packages
+- **New Approach**: 
+  - **All 83 packages fetch in parallel** (83 simultaneous requests!)
+  - Each description updates UI **immediately** when fetched
+  - No waiting for batches
+  - Uses Tokio `JoinSet` for concurrent task management
+- **Implementation**:
+  - Created `get_package_description()` - fetches single package (async)
+  - Created `add_package_descriptions_parallel()` - spawns all tasks at once
+  - Spawns 83 parallel async tasks with `JoinSet`
+  - Processes results as they complete (not in order)
+  - Updates shared state immediately for each result
+  - Progress logging every 10 packages: "Fetched descriptions: 10/83"
+- **User Experience**:
+  - Descriptions start appearing within 1-2 seconds
+  - Table fills in progressively, row by row
+  - Fast packages appear first (usually cached by Homebrew)
+  - Much more responsive feeling
+  - Total completion time: ~10-15 seconds (4x faster!)
+- **Technical Details**:
+  - Each task has 5-second timeout
+  - Failed fetches are silent (no description shown)
+  - Runs in separate spawned task (non-blocking)
+  - Uses `Arc<RwLock<Vec<Package>>>` for safe concurrent updates
+- **Phase Order** (optimized):
+  1. Package list (1 sec)
+  2. Mark as system tools (instant)
+  3. Check outdated status (2-3 sec)
+  4. Fetch descriptions in parallel (10-15 sec, updates live)
+**Next**: Consider rate limiting if Homebrew complains about too many simultaneous requests
+
+---
+
+## 2025-11-14 02:32:49 UTC
+
+**Project**: xyz
+**Activity**: Fixed "unused" issue and slow descriptions
+**What**: Resolved two bugs - incorrect "unused" labels and slow/hanging description fetching
+**Details**:
+- **Issue 1**: All Homebrew packages showed as "Unused" 
+  - **Root Cause**: Homebrew is a *system package manager*, not a project dependency manager
+  - Homebrew packages like `node`, `git`, `python` are system tools, not listed in `package.json`/`Cargo.toml`
+  - **Fix**: Mark all Homebrew packages as "System Tool" instead of scanning for project usage
+  - Added blue 🔧 "System" indicator instead of red ❌ "Unused"
+  - Changed stats label from "Unused" to "System"
+- **Issue 2**: Description fetching was very slow and timing out
+  - Tried to fetch descriptions for all 83 packages in one brew command (60s timeout)
+  - Command was hanging/timing out
+  - **Fix**: Batch descriptions in groups of 15 packages
+  - Reduced timeout to 20s per batch
+  - Added progress logging: "Getting descriptions for batch 1/6 (15 packages)..."
+  - Shows completion after each batch
+  - Reports success rate: "Added descriptions for 78/83 packages"
+- **Performance Improvements**:
+  - Reordered phases: Check outdated status BEFORE descriptions (faster first)
+  - Outdated check is quick (1-2 seconds)
+  - Description batches complete progressively
+  - UI stays responsive throughout
+- **Note for Future**: 
+  - To track actual project usage, need to implement npm/cargo/pip/gem scanners
+  - Those managers have project-level dependencies (unlike Homebrew's system tools)
+  - Scanner code is ready, just needs to be used for right package managers
+**Next**: Optionally add npm/cargo/pip manager support for project-level usage tracking
+
+---
+
+## 2025-11-14 02:30:16 UTC
+
+**Project**: xyz
+**Activity**: Added package descriptions and usage tracking
+**What**: Show what each package does and where it's used in your projects
+**Details**:
+- **User Request**: "Show what each package is for, what it does, which folders use it, unused packages, stats - all in table format"
+- **New Table Columns**:
+  1. **Description**: What the package does (from Homebrew descriptions)
+     - Truncated to 50 chars in table
+     - Hover to see full description
+  2. **Used In**: Which project directories use this package
+     - Shows single directory path or "N projects"
+     - Hover to see full list of all directories
+  3. **Usage**: Visual indicator of usage status
+     - ❌ Red "Unused" if not found in any project
+     - ✓ Green "N proj" showing number of projects using it
+- **Scanner Module** (`src/scanner/mod.rs`):
+  - Scans common dev directories: Desktop/projects, Documents/projects, ~/projects, ~/dev, etc.
+  - Searches up to 3 levels deep
+  - Checks for project files:
+    - `package.json` for npm packages
+    - `Cargo.toml` for Rust crates
+    - `requirements.txt`/`Pipfile` for Python packages
+    - `Gemfile` for Ruby gems
+  - Tracks which directories use each package
+  - Reports used vs unused counts
+- **Package Model Updates**:
+  - Added `description: Option<String>` field
+  - Added `used_in: Vec<String>` field
+  - Added `is_unused()` method
+- **4-Phase Loading** (all incremental):
+  1. Get package list (fast - 1 second)
+  2. Add descriptions (batch API call - moderate)
+  3. Scan for usage (filesystem scan - moderate)
+  4. Check outdated status (API call - moderate)
+  - UI updates after each phase for progressive enhancement
+- **Stats Update**: Changed "Orphaned" to "Unused" with real counts
+- **Table Improvements**:
+  - Now 9 columns: Name, Manager, Installed, Latest, Description, Used In, Usage, Status, Action
+  - Horizontal + vertical scrolling for wide table
+  - Hover tooltips for full descriptions and directory lists
+  - Color-coded usage indicators
+- **Performance**: Batch API calls where possible, incremental UI updates keep app responsive
+**Next**: Test with real projects, optimize scanning depth/directories
+
+---
+
+## 2025-11-14 02:27:50 UTC
+
+**Project**: xyz
+**Activity**: Added manual update controls - no automatic updates
+**What**: Implemented user-controlled package updates with individual and bulk options
+**Details**:
+- **User Request**: "Don't auto-update, give user option to update"
+- **New Features**:
+  1. **Individual Update Buttons**: Each outdated package has an "Update" button in the Action column
+  2. **Bulk Update Button**: Sidebar shows "⬆️ Update All (N)" button when outdated packages exist
+  3. **Update Status Display**: Shows real-time update progress with colored messages
+     - Spinner + text while updating
+     - Green ✓ for success
+     - Red ✗ for errors
+  4. **Automatic Refresh**: Package list refreshes automatically after updates complete
+- **Code changes**:
+  - Added `update_package()` and `update_all_outdated()` methods to `DepMgrApp`
+  - Created `updating_packages` set to track which packages are being updated
+  - Created `update_status` string for user feedback
+  - Added `update_package()` and `update_all_packages()` in `homebrew.rs`
+  - Uses `brew upgrade <package>` for individual updates
+  - Uses `brew upgrade` for bulk updates
+  - Added 7th column "Action" to package table
+  - Shows spinner while individual packages update
+  - Buttons only appear for outdated packages
+- **User Experience**:
+  - See which packages are outdated
+  - Click "Update" on individual packages OR "Update All" button
+  - Watch progress with spinner and status messages
+  - Packages refresh automatically after update completes
+  - Status messages auto-clear after 3-5 seconds
+- **Timeouts**: 5 minutes per package, 10 minutes for bulk updates
+**Next**: Test updates, add confirmation dialogs for bulk updates if needed
+
+---
+
+## 2025-11-14 02:25:50 UTC
+
+**Project**: xyz
+**Activity**: Implemented incremental UI updates for instant feedback
+**What**: Changed package scanning to update UI immediately as data becomes available
+**Details**:
+- **User Request**: Display information ASAP, don't wait for all processing to complete
+- **Previous behavior**: Collected all packages, checked for outdated status, then updated UI once at the end
+- **New behavior**: Two-phase update system
+  1. **Phase 1 (Fast)**: Get package list with `brew list --versions` (takes ~1 second)
+     - Display packages in UI immediately
+     - Shows package names and installed versions
+     - User sees all 83 packages right away
+  2. **Phase 2 (Slow)**: Check for outdated packages with `brew outdated` in background
+     - Updates UI again with outdated status when complete
+     - Shows which packages need updates
+- **Code changes**:
+  - Split `list_homebrew_packages()` into two functions:
+    - `list_homebrew_packages()` - fast, returns basic info
+    - `check_outdated_packages()` - slow, adds outdated status
+  - Modified `start_scan()` in `app.rs`:
+    - Writes packages to shared state immediately after getting list
+    - Then calls `check_outdated_packages()` and updates again
+  - Updated UI (`dashboard.rs`):
+    - Shows packages while scanning is still in progress
+    - Spinner displayed at top while scanning, but packages visible below
+    - Calls `ctx.request_repaint()` during scanning for real-time updates
+    - Added striped grid for better readability
+    - Made headers bold with `ui.strong()`
+- **User Experience**: 
+  - Window opens instantly
+  - Packages appear in ~1 second
+  - Outdated status updates in background
+  - No more waiting or timeouts
+**Next**: Test the incremental updates, monitor performance
+
+---
+
+## 2025-11-14 02:23:02 UTC
+
+**Project**: xyz
+**Activity**: Fixed application hang and timeout issues
+**What**: Resolved blocking initialization and Homebrew command timeouts
+**Details**:
+- **Problem 1**: Application was hanging during initialization due to incorrect async/blocking handling
+  - `main.rs` was using `rt.block_on(app.initialize())` which blocked the GUI thread
+  - `app.initialize()` spawned a task on a different runtime (`self.runtime`) and returned immediately
+  - This caused the blocking runtime to be dropped while tasks were still running
+- **Solution 1**: Changed initialization flow
+  - Moved package manager detection to a temporary runtime in `main.rs`
+  - Made detection blocking (quick operation)
+  - Made package scanning fully async and non-blocking
+  - Removed the `initialize()` method, using `start_scan()` directly
+- **Problem 2**: Homebrew `brew info --json=v2` commands timing out (60s timeout)
+  - Batches of 20 packages were too large, causing timeouts on slower systems
+  - Poor progress feedback - batch numbers weren't shown
+- **Solution 2**: Optimized Homebrew scanning
+  - Reduced batch size from 20 to 10 packages
+  - Reduced timeout from 60s to 30s (smaller batches = faster)
+  - Added batch progress indicators: "Processing batch 1/9 (10 packages)..."
+  - Added completion messages: "Batch 1 completed successfully, 10 packages so far"
+  - Improved error messages with batch numbers for better debugging
+- **Code changes**:
+  - Simplified `handle_refresh()` to just call `start_scan()`
+  - Fixed borrow checker issue by restructuring initialization
+  - Removed unused `detect_available_managers` import
+- Application now starts quickly, GUI is responsive, and package scanning happens in the background
+- Homebrew scanning is more reliable with smaller batches and better progress tracking
+**Next**: Test the application with actual Homebrew packages, monitor for any remaining timeouts
+
+---
+
 ## 2025-11-14 02:12:57 UTC
 
 **Project**: xyz

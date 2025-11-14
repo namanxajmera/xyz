@@ -67,6 +67,8 @@ pub struct Package {
     pub latest_version: Option<String>,
     pub is_outdated: bool,
     pub size: Option<u64>, // disk space in bytes
+    pub description: Option<String>, // what the package does
+    pub used_in: Vec<String>, // directories/projects using this package
 }
 
 impl Package {
@@ -78,6 +80,8 @@ impl Package {
             latest_version: None,
             is_outdated: false,
             size: None,
+            description: None,
+            used_in: Vec::new(),
         }
     }
 
@@ -85,6 +89,15 @@ impl Package {
         self.latest_version = Some(latest_version.clone());
         self.is_outdated = self.installed_version != latest_version;
         self
+    }
+    
+    pub fn with_description(mut self, description: String) -> Self {
+        self.description = Some(description);
+        self
+    }
+    
+    pub fn is_unused(&self) -> bool {
+        self.used_in.is_empty()
     }
 }
 

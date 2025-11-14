@@ -1,6 +1,7 @@
 mod app;
 mod managers;
 mod models;
+mod scanner;
 mod ui;
 mod utils;
 
@@ -20,12 +21,20 @@ fn main() -> eframe::Result<()> {
         "Dependency Manager",
         options,
         Box::new(|_cc| {
-            // Initialize app
+            // Initialize app with default state
             let mut app = DepMgrApp::default();
             
-            // Initialize async runtime and run initialization
+            // Create a temporary runtime for initial setup
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(app.initialize());
+            rt.block_on(async {
+                // Detect available package managers
+                app.available_managers = crate::managers::detect_available_managers().await;
+                println!("[DEBUG] Found {} package managers", app.available_managers.len());
+                app.selected_managers = app.available_managers.iter().cloned().collect();
+            });
+            
+            // Start the initial scan asynchronously (non-blocking)
+            app.start_scan();
 
             Ok(Box::new(app))
         }),

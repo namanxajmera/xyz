@@ -1,5 +1,5 @@
 use crate::models::{Package, PackageManager};
-use crate::managers::{detect_available_managers, list_homebrew_packages};
+use crate::managers::list_homebrew_packages;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
@@ -14,6 +14,8 @@ pub struct DepMgrApp {
     pub is_scanning: Arc<AtomicBool>,
     pub refresh_requested: bool,
     pub runtime: tokio::runtime::Runtime,
+    pub updating_packages: Arc<RwLock<std::collections::HashSet<String>>>,
+    pub update_status: Arc<RwLock<String>>,
 }
 
 impl Default for DepMgrApp {
@@ -28,19 +30,14 @@ impl Default for DepMgrApp {
             is_scanning: Arc::new(AtomicBool::new(false)),
             refresh_requested: false,
             runtime: tokio::runtime::Runtime::new().unwrap(),
+            updating_packages: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            update_status: Arc::new(RwLock::new(String::new())),
         }
     }
 }
 
 impl DepMgrApp {
-    pub async fn initialize(&mut self) {
-        println!("[DEBUG] Initializing app...");
-        // Detect available package managers
-        self.available_managers = detect_available_managers().await;
-        println!("[DEBUG] Found {} package managers", self.available_managers.len());
-        self.selected_managers = self.available_managers.iter().cloned().collect();
-        
-        // Initial scan
+    pub fn start_scan(&mut self) {
         self.is_scanning.store(true, Ordering::Relaxed);
         let packages_clone = Arc::clone(&self.packages);
         let scanning_flag = Arc::clone(&self.is_scanning);
@@ -48,15 +45,42 @@ impl DepMgrApp {
         
         self.runtime.spawn(async move {
             println!("[DEBUG] Starting package scan...");
-            let mut all_packages = Vec::new();
 
             // Scan Homebrew if available
             if available_managers.contains(&PackageManager::Homebrew) {
                 println!("[DEBUG] Scanning Homebrew packages...");
                 match list_homebrew_packages().await {
-                    Ok(packages) => {
+                    Ok(mut packages) => {
                         println!("[DEBUG] Found {} Homebrew packages", packages.len());
-                        all_packages.extend(packages);
+                        
+                        // Update UI immediately with basic package info
+                        *packages_clone.write().await = packages.clone();
+                        println!("[DEBUG] UI updated with initial package list");
+                        
+                        // Phase 2: Scan for actual project usage
+                        let scan_dirs = crate::scanner::get_scan_directories();
+                        crate::scanner::scan_homebrew_tool_usage(&mut packages, &scan_dirs);
+                        *packages_clone.write().await = packages.clone();
+                        println!("[DEBUG] Updated with project usage info");
+                        
+                        // Phase 3: Check for outdated packages (fast)
+                        if let Ok(updated_packages) = 
+                            crate::managers::homebrew::check_outdated_packages(packages.clone()).await {
+                            packages = updated_packages;
+                            *packages_clone.write().await = packages.clone();
+                            println!("[DEBUG] UI updated with outdated status");
+                        }
+                        
+                        // Phase 4: Fetch descriptions in parallel (updates UI as each one completes)
+                        // This doesn't block - descriptions appear one by one as they're fetched
+                        let packages_for_desc = packages.clone();
+                        let packages_arc = Arc::clone(&packages_clone);
+                        tokio::spawn(async move {
+                            crate::managers::homebrew::add_package_descriptions_parallel(
+                                packages_for_desc,
+                                packages_arc,
+                            ).await;
+                        });
                     }
                     Err(e) => {
                         eprintln!("[ERROR] Failed to list Homebrew packages: {}", e);
@@ -66,10 +90,8 @@ impl DepMgrApp {
 
             // TODO: Add other package managers
 
-            println!("[DEBUG] Scan complete. Total packages: {}", all_packages.len());
-            *packages_clone.write().await = all_packages;
             scanning_flag.store(false, Ordering::Relaxed);
-            println!("[DEBUG] Scanning flag set to false");
+            println!("[DEBUG] Scan complete");
         });
     }
 
@@ -80,35 +102,7 @@ impl DepMgrApp {
     pub fn handle_refresh(&mut self) {
         if self.refresh_requested {
             self.refresh_requested = false;
-            self.is_scanning.store(true, Ordering::Relaxed);
-            
-            let packages_clone = Arc::clone(&self.packages);
-            let scanning_flag = Arc::clone(&self.is_scanning);
-            let available_managers = self.available_managers.clone();
-            
-            self.runtime.spawn(async move {
-                println!("[DEBUG] Refresh: Starting package scan...");
-                let mut all_packages = Vec::new();
-
-                // Scan Homebrew if available
-                if available_managers.contains(&PackageManager::Homebrew) {
-                    match list_homebrew_packages().await {
-                        Ok(packages) => {
-                            println!("[DEBUG] Refresh: Found {} Homebrew packages", packages.len());
-                            all_packages.extend(packages);
-                        }
-                        Err(e) => {
-                            eprintln!("[ERROR] Refresh: Failed to list Homebrew packages: {}", e);
-                        }
-                    }
-                }
-
-                // TODO: Add other package managers
-
-                println!("[DEBUG] Refresh: Scan complete. Total packages: {}", all_packages.len());
-                *packages_clone.write().await = all_packages;
-                scanning_flag.store(false, Ordering::Relaxed);
-            });
+            self.start_scan();
         }
     }
 
@@ -149,13 +143,12 @@ impl DepMgrApp {
         let packages = self.packages.blocking_read();
         let total = packages.len();
         let outdated = packages.iter().filter(|p| p.is_outdated).count();
-        // Count orphaned packages (not used in any project)
-        // For now, we'll implement basic orphaned detection later
+        // Count unused packages
+        let unused = packages.iter().filter(|p| p.used_in.is_empty()).count();
         // Reference the functions to ensure they're not considered dead code
         let _orphaned_packages = self.find_orphaned_packages();
         let _scanned_projects = self.scan_projects();
-        let orphaned = 0; // TODO: implement orphaned detection using PackageUsage
-        (total, outdated, orphaned)
+        (total, outdated, unused)
     }
     
     // Placeholder for project scanning - will use Project and Dependency
@@ -188,6 +181,97 @@ impl DepMgrApp {
             return vec![usage];
         }
         Vec::new()
+    }
+    
+    pub fn update_package(&mut self, package_name: String, manager: PackageManager) {
+        let updating_packages = Arc::clone(&self.updating_packages);
+        let update_status = Arc::clone(&self.update_status);
+        let packages = Arc::clone(&self.packages);
+        
+        self.runtime.spawn(async move {
+            // Mark as updating
+            updating_packages.write().await.insert(package_name.clone());
+            *update_status.write().await = format!("Updating {}...", package_name);
+            
+            let result = match manager {
+                PackageManager::Homebrew => {
+                    crate::managers::homebrew::update_package(&package_name).await
+                }
+                _ => {
+                    Err(anyhow::anyhow!("Update not implemented for this package manager"))
+                }
+            };
+            
+            match result {
+                Ok(_) => {
+                    println!("[INFO] Successfully updated {}", package_name);
+                    *update_status.write().await = format!("✓ Updated {}", package_name);
+                    
+                    // Refresh the package list to get new version
+                    if let Ok(homebrew_packages) = list_homebrew_packages().await {
+                        if let Ok(updated) = crate::managers::homebrew::check_outdated_packages(homebrew_packages).await {
+                            *packages.write().await = updated;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to update {}: {}", package_name, e);
+                    *update_status.write().await = format!("✗ Failed to update {}: {}", package_name, e);
+                }
+            }
+            
+            // Remove from updating set
+            updating_packages.write().await.remove(&package_name);
+            
+            // Clear status after a delay
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            *update_status.write().await = String::new();
+        });
+    }
+    
+    pub fn update_all_outdated(&mut self) {
+        let updating_packages = Arc::clone(&self.updating_packages);
+        let update_status = Arc::clone(&self.update_status);
+        let packages = Arc::clone(&self.packages);
+        
+        self.runtime.spawn(async move {
+            *update_status.write().await = "Updating all outdated packages...".to_string();
+            
+            let result = crate::managers::homebrew::update_all_packages().await;
+            
+            match result {
+                Ok(_) => {
+                    println!("[INFO] Successfully updated all packages");
+                    *update_status.write().await = "✓ All packages updated".to_string();
+                    
+                    // Refresh the package list
+                    if let Ok(homebrew_packages) = list_homebrew_packages().await {
+                        if let Ok(updated) = crate::managers::homebrew::check_outdated_packages(homebrew_packages).await {
+                            *packages.write().await = updated;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to update all packages: {}", e);
+                    *update_status.write().await = format!("✗ Failed to update all: {}", e);
+                }
+            }
+            
+            // Clear updating set
+            updating_packages.write().await.clear();
+            
+            // Clear status after a delay
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            *update_status.write().await = String::new();
+        });
+    }
+    
+    pub fn is_updating(&self, package_name: &str) -> bool {
+        self.updating_packages.blocking_read().contains(package_name)
+    }
+    
+    pub fn get_update_status(&self) -> String {
+        self.update_status.blocking_read().clone()
     }
 }
 
