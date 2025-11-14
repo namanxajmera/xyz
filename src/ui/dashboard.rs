@@ -15,7 +15,10 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                 // Manager filters
                 for manager in &app.available_managers {
                     let is_selected = app.selected_managers.contains(manager);
-                    if ui.checkbox(&mut app.selected_managers.contains(manager), manager.name()).clicked() {
+                    if ui
+                        .checkbox(&mut app.selected_managers.contains(manager), manager.name())
+                        .clicked()
+                    {
                         if is_selected {
                             app.selected_managers.remove(manager);
                         } else {
@@ -26,7 +29,7 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
 
                 ui.separator();
                 ui.heading("Stats");
-                
+
                 let (total, outdated, unused) = app.stats();
                 ui.label(format!("Total: {}", total));
                 ui.label(format!("Outdated: {}", outdated));
@@ -37,14 +40,13 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                 if ui.button("🔄 Refresh").clicked() {
                     app.request_refresh();
                 }
-                
+
                 ui.separator();
-                
+
                 let (_, outdated, _) = app.stats();
-                if outdated > 0 {
-                    if ui.button(format!("⬆️ Update All ({})", outdated)).clicked() {
-                        app.update_all_outdated();
-                    }
+                if outdated > 0 && ui.button(format!("⬆️ Update All ({})", outdated)).clicked()
+                {
+                    app.update_all_outdated();
                 }
             });
 
@@ -56,9 +58,9 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
             ui.horizontal(|ui| {
                 ui.label("Search:");
                 ui.text_edit_singleline(&mut app.search_query);
-                
+
                 ui.separator();
-                
+
                 ui.checkbox(&mut app.show_outdated_only, "Outdated Only");
                 ui.checkbox(&mut app.show_orphaned_only, "Orphaned Only");
             });
@@ -76,7 +78,7 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                 // Request continuous repaints while scanning to show updates immediately
                 ctx.request_repaint();
             }
-            
+
             // Show update status - full width, natural wrapping
             let update_status = app.get_update_status();
             if !update_status.is_empty() {
@@ -84,20 +86,33 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                     if update_status.contains("...") {
                         ui.spinner();
                     }
-                    
+
                     // Use full available width for status messages
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
-                        ui.set_width(ui.available_width());
-                        
-                        // Color based on message type
-                        if update_status.contains("Failed") || update_status.contains("failed") {
-                            ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(255, 0, 0)));
-                        } else if update_status.contains("removed") || update_status.contains("updated") || update_status.contains("reinstalled") {
-                            ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(0, 200, 0)));
-                        } else {
-                            ui.label(&update_status);
-                        }
-                    });
+                    ui.with_layout(
+                        egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true),
+                        |ui| {
+                            ui.set_width(ui.available_width());
+
+                            // Color based on message type
+                            if update_status.contains("Failed") || update_status.contains("failed")
+                            {
+                                ui.label(
+                                    egui::RichText::new(&update_status)
+                                        .color(egui::Color32::from_rgb(255, 0, 0)),
+                                );
+                            } else if update_status.contains("removed")
+                                || update_status.contains("updated")
+                                || update_status.contains("reinstalled")
+                            {
+                                ui.label(
+                                    egui::RichText::new(&update_status)
+                                        .color(egui::Color32::from_rgb(0, 200, 0)),
+                                );
+                            } else {
+                                ui.label(&update_status);
+                            }
+                        },
+                    );
                 });
                 ui.separator();
                 ctx.request_repaint();
@@ -105,7 +120,7 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
 
             // Package table - show even while scanning
             let filtered = app.filtered_packages();
-            
+
             if filtered.is_empty() && !is_scanning {
                 ui.centered_and_justified(|ui| {
                     ui.label("No packages found");
@@ -120,113 +135,158 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                             .striped(true)
                             .resizable(true)
                             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                            .column(Column::initial(100.0).at_least(60.0).resizable(true))  // Name
-                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Manager
-                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Installed
-                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Latest
+                            .column(Column::initial(100.0).at_least(60.0).resizable(true)) // Name
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true)) // Manager
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true)) // Installed
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true)) // Latest
                             .column(Column::initial(300.0).at_least(100.0).resizable(true)) // Description (wider)
-                            .column(Column::initial(200.0).at_least(80.0).resizable(true))  // Usage (wider)
-                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Status
-                            .column(Column::initial(100.0).at_least(80.0).resizable(true))  // Action
-                    .header(20.0, |mut header| {
-                        header.col(|ui| { ui.strong("Name"); });
-                        header.col(|ui| { ui.strong("Manager"); });
-                        header.col(|ui| { ui.strong("Installed"); });
-                        header.col(|ui| { ui.strong("Latest"); });
-                        header.col(|ui| { ui.strong("Description"); });
-                        header.col(|ui| { ui.strong("Usage"); });
-                        header.col(|ui| { ui.strong("Status"); });
-                        header.col(|ui| { ui.strong("Action"); });
-                    })
-                    .body(|mut body| {
-                        for pkg in filtered {
-                            body.row(18.0, |mut row| {
-                                row.col(|ui| { ui.label(&pkg.name); });
-                                row.col(|ui| { ui.label(pkg.manager.name()); });
-                                row.col(|ui| { ui.label(&pkg.installed_version); });
-                                
-                                row.col(|ui| {
-                                    if let Some(latest) = &pkg.latest_version {
-                                        ui.label(latest);
-                                    } else {
-                                        ui.label("-");
-                                    }
+                            .column(Column::initial(200.0).at_least(80.0).resizable(true)) // Usage (wider)
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true)) // Status
+                            .column(Column::initial(100.0).at_least(80.0).resizable(true)) // Action
+                            .header(20.0, |mut header| {
+                                header.col(|ui| {
+                                    ui.strong("Name");
                                 });
+                                header.col(|ui| {
+                                    ui.strong("Manager");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Installed");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Latest");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Description");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Usage");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Status");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Action");
+                                });
+                            })
+                            .body(|mut body| {
+                                for pkg in filtered {
+                                    body.row(18.0, |mut row| {
+                                        row.col(|ui| {
+                                            ui.label(&pkg.name);
+                                        });
+                                        row.col(|ui| {
+                                            ui.label(pkg.manager.name());
+                                        });
+                                        row.col(|ui| {
+                                            ui.label(&pkg.installed_version);
+                                        });
 
-                                // Description - no truncation, resizable column
-                                row.col(|ui| {
-                                    if let Some(desc) = &pkg.description {
-                                        ui.label(desc);
-                                    } else {
-                                        ui.label("-");
-                                    }
-                                });
-
-                                // Usage - show full folder names, resizable column
-                                row.col(|ui| {
-                                    if pkg.used_in.is_empty() {
-                                        ui.label(egui::RichText::new("Unused").color(egui::Color32::from_rgb(200, 0, 0)));
-                                    } else {
-                                        // Extract folder names
-                                        let folder_names: Vec<String> = pkg.used_in
-                                            .iter()
-                                            .filter_map(|path| {
-                                                std::path::Path::new(path)
-                                                    .file_name()
-                                                    .and_then(|n| n.to_str())
-                                                    .map(|s| s.to_string())
-                                            })
-                                            .collect();
-                                        
-                                        let display_text = folder_names.join(", ");
-                                        ui.label(egui::RichText::new(display_text).color(egui::Color32::from_rgb(0, 150, 0)));
-                                    }
-                                });
-
-                                // Status
-                                row.col(|ui| {
-                                    if pkg.is_outdated {
-                                        ui.label(egui::RichText::new("Outdated").color(egui::Color32::from_rgb(255, 165, 0)));
-                                    } else {
-                                        ui.label(egui::RichText::new("Current").color(egui::Color32::from_rgb(0, 200, 0)));
-                                    }
-                                });
-                                
-                                // Action buttons
-                                row.col(|ui| {
-                                    ui.horizontal(|ui| {
-                                        let is_updating = app.is_updating(&pkg.name);
-                                        let is_removed = app.is_removed(&pkg.name);
-                                        
-                                        if is_updating {
-                                            ui.spinner();
-                                        } else {
-                                            if pkg.is_outdated && !is_removed {
-                                                if ui.button("Update").clicked() {
-                                                    app.update_package(pkg.name.clone(), pkg.manager.clone());
-                                                }
-                                            }
-                                            
-                                            if is_removed {
-                                                // Show "Reinstall" for removed packages
-                                                if ui.button("Reinstall").clicked() {
-                                                    app.reinstall_package(pkg.name.clone(), pkg.manager.clone());
-                                                }
+                                        row.col(|ui| {
+                                            if let Some(latest) = &pkg.latest_version {
+                                                ui.label(latest);
                                             } else {
-                                                // Show "Remove" for installed packages
-                                                if ui.button("Remove").clicked() {
-                                                    app.uninstall_package(pkg.name.clone(), pkg.manager.clone());
-                                                }
+                                                ui.label("-");
                                             }
-                                        }
+                                        });
+
+                                        // Description - no truncation, resizable column
+                                        row.col(|ui| {
+                                            if let Some(desc) = &pkg.description {
+                                                ui.label(desc);
+                                            } else {
+                                                ui.label("-");
+                                            }
+                                        });
+
+                                        // Usage - show full folder names, resizable column
+                                        row.col(|ui| {
+                                            if pkg.used_in.is_empty() {
+                                                ui.label(
+                                                    egui::RichText::new("Unused")
+                                                        .color(egui::Color32::from_rgb(200, 0, 0)),
+                                                );
+                                            } else {
+                                                // Extract folder names
+                                                let folder_names: Vec<String> = pkg
+                                                    .used_in
+                                                    .iter()
+                                                    .filter_map(|path| {
+                                                        std::path::Path::new(path)
+                                                            .file_name()
+                                                            .and_then(|n| n.to_str())
+                                                            .map(|s| s.to_string())
+                                                    })
+                                                    .collect();
+
+                                                let display_text = folder_names.join(", ");
+                                                ui.label(
+                                                    egui::RichText::new(display_text)
+                                                        .color(egui::Color32::from_rgb(0, 150, 0)),
+                                                );
+                                            }
+                                        });
+
+                                        // Status
+                                        row.col(|ui| {
+                                            if pkg.is_outdated {
+                                                ui.label(
+                                                    egui::RichText::new("Outdated").color(
+                                                        egui::Color32::from_rgb(255, 165, 0),
+                                                    ),
+                                                );
+                                            } else {
+                                                ui.label(
+                                                    egui::RichText::new("Current")
+                                                        .color(egui::Color32::from_rgb(0, 200, 0)),
+                                                );
+                                            }
+                                        });
+
+                                        // Action buttons
+                                        row.col(|ui| {
+                                            ui.horizontal(|ui| {
+                                                let is_updating = app.is_updating(&pkg.name);
+                                                let is_removed = app.is_removed(&pkg.name);
+
+                                                if is_updating {
+                                                    ui.spinner();
+                                                } else {
+                                                    if pkg.is_outdated
+                                                        && !is_removed
+                                                        && ui.button("Update").clicked()
+                                                    {
+                                                        app.update_package(
+                                                            pkg.name.clone(),
+                                                            pkg.manager.clone(),
+                                                        );
+                                                    }
+
+                                                    if is_removed {
+                                                        // Show "Reinstall" for removed packages
+                                                        if ui.button("Reinstall").clicked() {
+                                                            app.reinstall_package(
+                                                                pkg.name.clone(),
+                                                                pkg.manager.clone(),
+                                                            );
+                                                        }
+                                                    } else {
+                                                        // Show "Remove" for installed packages
+                                                        if ui.button("Remove").clicked() {
+                                                            app.uninstall_package(
+                                                                pkg.name.clone(),
+                                                                pkg.manager.clone(),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            });
+                                        });
                                     });
-                                });
+                                }
                             });
-                        }
                     });
-                });
             }
         });
     });
 }
-

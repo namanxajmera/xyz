@@ -29,4 +29,3 @@ pub async fn detect_available_managers() -> Vec<PackageManager> {
 
     available
 }
-

@@ -34,11 +34,7 @@ pub async fn run_command_with_timeout(
                     // Timeout exceeded, kill the process
                     let _ = child.kill().await;
                     let _ = child.wait().await; // Clean up
-                    return Err(anyhow!(
-                        "Command '{}' timed out after {:?}",
-                        cmd,
-                        timeout
-                    ));
+                    return Err(anyhow!("Command '{}' timed out after {:?}", cmd, timeout));
                 }
                 // Sleep briefly before next check
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -52,15 +48,9 @@ pub async fn run_command_with_timeout(
 }
 
 pub async fn command_exists(cmd: &str) -> bool {
-    if let Ok(output) = run_command_with_timeout(
-        "which",
-        &[cmd],
-        Duration::from_secs(2),
-    )
-    .await {
+    if let Ok(output) = run_command_with_timeout("which", &[cmd], Duration::from_secs(2)).await {
         output.status.success()
     } else {
         false
     }
 }
-

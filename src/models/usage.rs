@@ -31,4 +31,3 @@ impl PackageUsage {
         self.is_orphaned = false;
     }
 }
-

@@ -1,7 +1,7 @@
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry<T> {
@@ -33,8 +33,8 @@ impl<T> CacheEntry<T> {
 }
 
 /// Fast in-memory cache using DashMap (lock-free)
-pub static MEMORY_CACHE: LazyLock<DashMap<String, CacheEntry<String>>> = 
-    LazyLock::new(|| DashMap::new());
+pub static MEMORY_CACHE: LazyLock<DashMap<String, CacheEntry<String>>> =
+    LazyLock::new(DashMap::new);
 
 pub fn get_cached<T: for<'de> Deserialize<'de>>(key: &str) -> Option<T> {
     if let Some(entry) = MEMORY_CACHE.get(key) {
@@ -57,4 +57,3 @@ pub fn set_cached<T: Serialize>(key: String, data: &T, ttl_seconds: u64) {
         MEMORY_CACHE.insert(key, CacheEntry::new(json, ttl_seconds));
     }
 }
-

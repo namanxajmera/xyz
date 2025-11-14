@@ -66,10 +66,9 @@ pub struct Package {
     pub installed_version: String,
     pub latest_version: Option<String>,
     pub is_outdated: bool,
-    pub size: Option<u64>, // disk space in bytes
+    pub size: Option<u64>,           // disk space in bytes
     pub description: Option<String>, // what the package does
-    pub used_in: Vec<String>, // directories/projects using this package
+    pub used_in: Vec<String>,        // directories/projects using this package
 }
 
 // Removed unused helper methods - dead code cleanup
-
