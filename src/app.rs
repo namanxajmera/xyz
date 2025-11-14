@@ -1,5 +1,4 @@
 use crate::models::{Package, PackageManager};
-use crate::managers::list_homebrew_packages;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
@@ -49,7 +48,7 @@ impl DepMgrApp {
             // Scan Homebrew if available
             if available_managers.contains(&PackageManager::Homebrew) {
                 println!("[DEBUG] Scanning Homebrew packages...");
-                match list_homebrew_packages().await {
+                match crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
                     Ok(mut packages) => {
                         println!("[DEBUG] Found {} Homebrew packages", packages.len());
                         
@@ -63,20 +62,17 @@ impl DepMgrApp {
                         *packages_clone.write().await = packages.clone();
                         println!("[DEBUG] Updated with project usage info");
                         
-                        // Phase 3: Check for outdated packages (fast)
-                        if let Ok(updated_packages) = 
-                            crate::managers::homebrew::check_outdated_packages(packages.clone()).await {
-                            packages = updated_packages;
+                        // Phase 3: Check for outdated packages (INSTANT with API data!)
+                        if let Ok(()) = crate::managers::homebrew_fast::check_outdated_packages_fast(&mut packages).await {
                             *packages_clone.write().await = packages.clone();
                             println!("[DEBUG] UI updated with outdated status");
                         }
                         
-                        // Phase 4: Fetch descriptions in parallel (updates UI as each one completes)
-                        // This doesn't block - descriptions appear one by one as they're fetched
+                        // Phase 4: Only fetch missing descriptions (API already gave us most!)
                         let packages_for_desc = packages.clone();
                         let packages_arc = Arc::clone(&packages_clone);
                         tokio::spawn(async move {
-                            crate::managers::homebrew::add_package_descriptions_parallel(
+                            crate::managers::homebrew_fast::add_missing_descriptions_fast(
                                 packages_for_desc,
                                 packages_arc,
                             ).await;
@@ -195,7 +191,7 @@ impl DepMgrApp {
             
             let result = match manager {
                 PackageManager::Homebrew => {
-                    crate::managers::homebrew::update_package(&package_name).await
+                    crate::managers::homebrew_fast::update_package(package_name.clone()).await
                 }
                 _ => {
                     Err(anyhow::anyhow!("Update not implemented for this package manager"))
@@ -208,9 +204,9 @@ impl DepMgrApp {
                     *update_status.write().await = format!("✓ Updated {}", package_name);
                     
                     // Refresh the package list to get new version
-                    if let Ok(homebrew_packages) = list_homebrew_packages().await {
-                        if let Ok(updated) = crate::managers::homebrew::check_outdated_packages(homebrew_packages).await {
-                            *packages.write().await = updated;
+                    if let Ok(mut homebrew_packages) = crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
+                        if let Ok(()) = crate::managers::homebrew_fast::check_outdated_packages_fast(&mut homebrew_packages).await {
+                            *packages.write().await = homebrew_packages;
                         }
                     }
                 }
@@ -237,7 +233,7 @@ impl DepMgrApp {
         self.runtime.spawn(async move {
             *update_status.write().await = "Updating all outdated packages...".to_string();
             
-            let result = crate::managers::homebrew::update_all_packages().await;
+            let result = crate::managers::homebrew_fast::update_all_packages().await;
             
             match result {
                 Ok(_) => {
@@ -245,9 +241,9 @@ impl DepMgrApp {
                     *update_status.write().await = "✓ All packages updated".to_string();
                     
                     // Refresh the package list
-                    if let Ok(homebrew_packages) = list_homebrew_packages().await {
-                        if let Ok(updated) = crate::managers::homebrew::check_outdated_packages(homebrew_packages).await {
-                            *packages.write().await = updated;
+                    if let Ok(mut homebrew_packages) = crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
+                        if let Ok(()) = crate::managers::homebrew_fast::check_outdated_packages_fast(&mut homebrew_packages).await {
+                            *packages.write().await = homebrew_packages;
                         }
                     }
                 }
@@ -272,6 +268,53 @@ impl DepMgrApp {
     
     pub fn get_update_status(&self) -> String {
         self.update_status.blocking_read().clone()
+    }
+    
+    pub fn uninstall_package(&mut self, package_name: String, manager: PackageManager) {
+        let updating_packages = Arc::clone(&self.updating_packages);
+        let update_status = Arc::clone(&self.update_status);
+        let packages = Arc::clone(&self.packages);
+        
+        self.runtime.spawn(async move {
+            // Mark as updating/processing
+            updating_packages.write().await.insert(package_name.clone());
+            *update_status.write().await = format!("Removing {}...", package_name);
+            
+            let pkg_name = package_name.clone();
+            let result = match manager {
+                PackageManager::Homebrew => {
+                    crate::managers::homebrew_fast::uninstall_package(pkg_name).await
+                }
+                _ => {
+                    Err(anyhow::anyhow!("Uninstall not implemented for this package manager"))
+                }
+            };
+            
+            match result {
+                Ok(_) => {
+                    println!("[INFO] Successfully removed {}", package_name);
+                    *update_status.write().await = format!("✓ Removed {}", package_name);
+                    
+                    // Refresh the package list
+                    if let Ok(mut homebrew_packages) = crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
+                        if let Ok(()) = crate::managers::homebrew_fast::check_outdated_packages_fast(&mut homebrew_packages).await {
+                            *packages.write().await = homebrew_packages;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to remove {}: {}", package_name, e);
+                    *update_status.write().await = format!("✗ Failed to remove {}: {}", package_name, e);
+                }
+            }
+            
+            // Remove from updating set
+            updating_packages.write().await.remove(&package_name);
+            
+            // Clear status after a delay
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            *update_status.write().await = String::new();
+        });
     }
 }
 

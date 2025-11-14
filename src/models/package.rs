@@ -71,33 +71,5 @@ pub struct Package {
     pub used_in: Vec<String>, // directories/projects using this package
 }
 
-impl Package {
-    pub fn new(name: String, manager: PackageManager, installed_version: String) -> Self {
-        Self {
-            name,
-            manager,
-            installed_version,
-            latest_version: None,
-            is_outdated: false,
-            size: None,
-            description: None,
-            used_in: Vec::new(),
-        }
-    }
-
-    pub fn with_latest_version(mut self, latest_version: String) -> Self {
-        self.latest_version = Some(latest_version.clone());
-        self.is_outdated = self.installed_version != latest_version;
-        self
-    }
-    
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = Some(description);
-        self
-    }
-    
-    pub fn is_unused(&self) -> bool {
-        self.used_in.is_empty()
-    }
-}
+// Removed unused helper methods - dead code cleanup
 

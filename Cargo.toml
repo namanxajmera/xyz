@@ -7,10 +7,20 @@ edition = "2021"
 # GUI Framework
 eframe = "0.33"
 egui = "0.33"
+egui_extras = "0.33"
 
 # Async Runtime
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
+
+# HTTP Client (for fast API requests)
+reqwest = { version = "0.12", features = ["json", "gzip"] }
+
+# Parallel Processing
+rayon = "1.10"
+
+# Fast Caching
+dashmap = "6.1"
 
 # Error Handling
 anyhow = "1"

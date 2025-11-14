@@ -1,5 +1,6 @@
 use crate::app::DepMgrApp;
 use eframe::egui;
+use egui_extras::{Column, TableBuilder};
 
 pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
     egui::CentralPanel::default().show(ctx, |_ui| {
@@ -103,92 +104,108 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                     ui.label("No packages found");
                 });
             } else if !filtered.is_empty() {
+                // Wrap table in scroll area for both vertical and horizontal scrolling
                 egui::ScrollArea::both()
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        egui::Grid::new("packages_grid")
-                            .num_columns(9)
-                            .spacing([10.0, 4.0])
+                        // Use resizable table instead of grid
+                        TableBuilder::new(ui)
                             .striped(true)
-                            .show(ui, |ui| {
-                                // Header
-                                ui.strong("Name");
-                                ui.strong("Manager");
-                                ui.strong("Installed");
-                                ui.strong("Latest");
-                                ui.strong("Description");
-                                ui.strong("Used In");
-                                ui.strong("Usage");
-                                ui.strong("Status");
-                                ui.strong("Action");
-                                ui.end_row();
-
-                                // Rows
-                                for pkg in filtered {
-                                    ui.label(&pkg.name);
-                                    ui.label(pkg.manager.name());
-                                    ui.label(&pkg.installed_version);
-                                    
+                            .resizable(true)
+                            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                            .column(Column::initial(100.0).at_least(60.0).resizable(true))  // Name
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Manager
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Installed
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Latest
+                            .column(Column::initial(300.0).at_least(100.0).resizable(true)) // Description (wider)
+                            .column(Column::initial(200.0).at_least(80.0).resizable(true))  // Usage (wider)
+                            .column(Column::initial(80.0).at_least(60.0).resizable(true))   // Status
+                            .column(Column::initial(100.0).at_least(80.0).resizable(true))  // Action
+                    .header(20.0, |mut header| {
+                        header.col(|ui| { ui.strong("Name"); });
+                        header.col(|ui| { ui.strong("Manager"); });
+                        header.col(|ui| { ui.strong("Installed"); });
+                        header.col(|ui| { ui.strong("Latest"); });
+                        header.col(|ui| { ui.strong("Description"); });
+                        header.col(|ui| { ui.strong("Usage"); });
+                        header.col(|ui| { ui.strong("Status"); });
+                        header.col(|ui| { ui.strong("Action"); });
+                    })
+                    .body(|mut body| {
+                        for pkg in filtered {
+                            body.row(18.0, |mut row| {
+                                row.col(|ui| { ui.label(&pkg.name); });
+                                row.col(|ui| { ui.label(pkg.manager.name()); });
+                                row.col(|ui| { ui.label(&pkg.installed_version); });
+                                
+                                row.col(|ui| {
                                     if let Some(latest) = &pkg.latest_version {
                                         ui.label(latest);
                                     } else {
                                         ui.label("-");
                                     }
+                                });
 
-                                    // Description (truncate if too long)
+                                // Description - no truncation, resizable column
+                                row.col(|ui| {
                                     if let Some(desc) = &pkg.description {
-                                        let short_desc = if desc.len() > 50 {
-                                            format!("{}...", &desc[..50])
-                                        } else {
-                                            desc.clone()
-                                        };
-                                        ui.label(short_desc).on_hover_text(desc);
+                                        ui.label(desc);
                                     } else {
                                         ui.label("-");
                                     }
-                                    
-                                    // Used in directories
-                                    if pkg.used_in.is_empty() {
-                                        ui.label("-");
-                                    } else {
-                                        let dirs_text = if pkg.used_in.len() == 1 {
-                                            pkg.used_in[0].clone()
-                                        } else {
-                                            format!("{} projects", pkg.used_in.len())
-                                        };
-                                        let full_list = pkg.used_in.join("\n");
-                                        ui.label(dirs_text).on_hover_text(full_list);
-                                    }
-                                    
-                                    // Usage status
-                                    if pkg.used_in.is_empty() {
-                                        ui.label(egui::RichText::new("❌ Unused").color(egui::Color32::from_rgb(200, 0, 0)));
-                                    } else {
-                                        ui.label(egui::RichText::new(format!("✓ {} proj", pkg.used_in.len())).color(egui::Color32::from_rgb(0, 150, 0)));
-                                    }
+                                });
 
-                                    // Update status
+                                // Usage - show full folder names, resizable column
+                                row.col(|ui| {
+                                    if pkg.used_in.is_empty() {
+                                        ui.label(egui::RichText::new("Unused").color(egui::Color32::from_rgb(200, 0, 0)));
+                                    } else {
+                                        // Extract folder names
+                                        let folder_names: Vec<String> = pkg.used_in
+                                            .iter()
+                                            .filter_map(|path| {
+                                                std::path::Path::new(path)
+                                                    .file_name()
+                                                    .and_then(|n| n.to_str())
+                                                    .map(|s| s.to_string())
+                                            })
+                                            .collect();
+                                        
+                                        let display_text = folder_names.join(", ");
+                                        ui.label(egui::RichText::new(display_text).color(egui::Color32::from_rgb(0, 150, 0)));
+                                    }
+                                });
+
+                                // Status
+                                row.col(|ui| {
                                     if pkg.is_outdated {
                                         ui.label(egui::RichText::new("⚠️ Outdated").color(egui::Color32::from_rgb(255, 165, 0)));
                                     } else {
                                         ui.label(egui::RichText::new("✓ Current").color(egui::Color32::from_rgb(0, 200, 0)));
                                     }
-                                    
-                                    // Update button
-                                    if pkg.is_outdated {
-                                        let is_updating = app.is_updating(&pkg.name);
-                                        if is_updating {
-                                            ui.spinner();
-                                        } else if ui.button("Update").clicked() {
-                                            app.update_package(pkg.name.clone(), pkg.manager.clone());
+                                });
+                                
+                                // Action buttons
+                                row.col(|ui| {
+                                    ui.horizontal(|ui| {
+                                        if pkg.is_outdated {
+                                            let is_updating = app.is_updating(&pkg.name);
+                                            if is_updating {
+                                                ui.spinner();
+                                            } else if ui.button("Update").clicked() {
+                                                app.update_package(pkg.name.clone(), pkg.manager.clone());
+                                            }
                                         }
-                                    } else {
-                                        ui.label("");
-                                    }
-                                    
-                                    ui.end_row();
-                                }
+                                        
+                                        if ui.button("Remove").clicked() {
+                                            app.uninstall_package(pkg.name.clone(), pkg.manager.clone());
+                                        }
+                                    });
+                                });
                             });
+                        }
                     });
+                });
             }
         });
     });
