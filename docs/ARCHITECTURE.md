@@ -1,12 +1,9 @@
-# Architecture Documentation
+# Architecture
 
-**DepMgr - System Design and Technical Overview**
+System design and technical details. Mainly for AI assistants understanding the codebase.
 
----
+## Contents
 
-## Table of Contents
-
-- [Overview](#overview)
 - [System Architecture](#system-architecture)
 - [Core Components](#core-components)
 - [Data Models](#data-models)
@@ -19,16 +16,14 @@
 - [State Management](#state-management)
 - [Extension Points](#extension-points)
 
----
-
 ## Overview
 
-DepMgr is a **high-performance desktop application** built with Rust that provides unified package management across multiple package managers (Homebrew, npm, cargo, pip). The architecture is designed for:
+Fast desktop app in Rust that manages packages across Homebrew, npm, cargo, and pip. Key design goals:
 
-1. **Performance**: Parallel processing, HTTP APIs, connection pooling, caching
-2. **Responsiveness**: Non-blocking async operations, incremental UI updates
-3. **Extensibility**: Modular design makes adding new package managers straightforward
-4. **Reliability**: Strong typing, comprehensive error handling, atomic operations
+- **Fast**: Parallel processing, HTTP APIs, caching
+- **Responsive**: Non-blocking async, incremental UI updates
+- **Modular**: Easy to add new package managers
+- **Reliable**: Strong typing, good error handling
 
 ---
 

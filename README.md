@@ -1,444 +1,166 @@
-# DepMgr - Unified Package Manager Dashboard
+# DepMgr
 
-**A blazingly fast Rust GUI application that provides a unified visual dashboard for managing packages across all your package managers in one place.**
+A fast Rust GUI app that shows all your packages from Homebrew, npm, cargo, and pip in one place. Update or remove them with actual buttons instead of remembering CLI commands.
 
----
+## What It Does
 
-## 📋 Table of Contents
+I got tired of running `brew list`, `npm list -g`, `cargo install --list`, and `pip3 list` separately and having no idea what was outdated or taking up space. So I built this.
 
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Supported Package Managers](#supported-package-managers)
-- [Quick Start](#quick-start)
-- [Architecture Highlights](#architecture-highlights)
-- [Screenshots & UI](#screenshots--ui)
-- [Performance](#performance)
-- [Documentation](#documentation)
-- [Development](#development)
-- [License](#license)
-
----
-
-## Overview
-
-**DepMgr** solves a common problem: developers use multiple package managers (Homebrew, npm, cargo, pip) but have no unified way to see what's installed, what's outdated, and what's taking up disk space. DepMgr provides:
-
-- **Unified Dashboard**: See ALL packages from ALL managers in one table
-- **One-Click Updates**: Update packages with buttons, not terminal commands
-- **Project Mapping**: See which projects use which packages
-- **Orphan Detection**: Find unused packages taking up space
-- **Real-Time UI**: Incremental loading with immediate feedback
-
-**For Product Managers**: This tool increases developer productivity by reducing context switching between multiple package management tools. Instead of running 10+ different CLI commands across different terminals, developers can manage all packages in one visual interface.
-
-**For AI Engineers**: This is a showcase of Rust's capabilities for building high-performance desktop applications with modern async patterns, parallel processing, and immediate-mode GUI architecture.
-
----
-
-## Key Features
-
-### 🎯 Unified Package View
-
-View packages from Homebrew, npm, cargo, and pip in a single searchable, filterable table.
-
-**Implementation**: [`src/app.rs:40-179`](src/app.rs) - The `start_scan()` method orchestrates parallel scanning of all available package managers.
-
-```rust
-// Scans all available package managers in parallel
-pub fn start_scan(&mut self) {
-    // Homebrew scan (if available)
-    if available_managers.contains(&PackageManager::Homebrew) {
-        match crate::managers::homebrew_fast::list_homebrew_packages_fast().await
-    }
-    
-    // npm, cargo, pip scans run concurrently
-    // Results merge into single unified list
-}
-```
-
-### ⚡ Blazingly Fast Performance
-
-- **100-200x faster** than sequential CLI calls
-- **First load**: 30-60 seconds (vs 8-10 minutes with old approach)
-- **Cached loads**: <100ms (instant)
-- **HTTP API + Parallel Processing**: Single API call fetches all 6,943 Homebrew formulas
-
-**Implementation**: [`src/managers/homebrew_fast.rs:22-100`](src/managers/homebrew_fast.rs) - Uses Homebrew Formula API for batch fetching
-
-```rust
-// ONE API call replaces 83+ separate CLI invocations
-let url = "https://formulae.brew.sh/api/formula.json";
-let formulas: Vec<FormulaInfo> = client.get(url).send().await?.json().await?;
-
-// Parallel filtering with Rayon
-let packages: Vec<Package> = formulas
-    .par_iter() // Parallel iterator
-    .filter_map(|formula| installed.get(&formula.name))
-    .collect();
-```
-
-### 🔍 Smart Project Detection
-
-Automatically scans your project directories and maps packages to projects that use them.
-
-**Implementation**: [`src/scanner/project_scanner.rs:6-226`](src/scanner/project_scanner.rs)
-
-Detects project types by marker files:
-- `package.json` → uses `node`, `npm`
-- `Cargo.toml` → uses `rust`, `cargo`
-- `requirements.txt`/`Pipfile` → uses `python`, `pip`
-- `Gemfile` → uses `ruby`, `gem`
-
-### 📦 Package Operations
-
-- **Update**: Individual or bulk updates with progress tracking
-- **Remove**: Uninstall packages with one-click reinstall safety net
-- **Reinstall**: Accidentally removed something? Click "Reinstall" to restore
-
-**Implementation**: [`src/app.rs:276-495`](src/app.rs) - Update, uninstall, and reinstall methods with async operation tracking
-
-### 🎨 Modern GUI
-
-Built with [egui](https://github.com/emilk/egui) (immediate-mode GUI framework):
-- Resizable table columns
-- Real-time search and filtering
-- Color-coded status indicators
-- Progress spinners for async operations
-- Horizontal + vertical scrolling
-
-**Implementation**: [`src/ui/dashboard.rs:5-292`](src/ui/dashboard.rs) - Complete dashboard UI with resizable table
-
----
-
-## Supported Package Managers
-
-| Manager | Status | List Command | Update Command |
-|---------|--------|--------------|----------------|
-| **Homebrew** | ✅ Fully Supported | API: `formulae.brew.sh/api/formula.json` | `brew upgrade <pkg>` |
-| **npm** | ✅ Fully Supported | `npm list -g --depth=0 --json` | `npm update -g <pkg>` |
-| **Cargo** | ✅ Fully Supported | `cargo install --list` | `cargo install --force <pkg>` |
-| **pip** | ✅ Fully Supported | `pip3 list --format=json` | `pip3 install --upgrade <pkg>` |
-| yarn | 🔄 Planned | - | - |
-| pnpm | 🔄 Planned | - | - |
-| gem | 🔄 Planned | - | - |
-
-**Implementation Reference**:
-- Package manager enum: [`src/models/package.rs:5-54`](src/models/package.rs)
-- Detection logic: [`src/managers/detector.rs`](src/managers/detector.rs)
-- Manager implementations: [`src/managers/`](src/managers/) directory
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Rust** (1.70+): Install from [rustup.rs](https://rustup.rs/)
-- **macOS** (currently primary platform, Linux/Windows support planned)
-- At least one package manager installed (Homebrew, npm, cargo, pip)
-
-### Installation
-
-**Option 1: Build from Source**
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd xyz
-
-# Build release binary (optimized)
-cargo build --release
-
-# Binary location: target/release/depmgr
-./target/release/depmgr
-```
-
-**Option 2: Development Build**
-
-```bash
-# Clone and run directly
-git clone <repository-url>
-cd xyz
-cargo run
-```
-
-### First Run
-
-1. **Launch the application**: `./target/release/depmgr` or `cargo run`
-2. **Wait for scan**: The app automatically detects and scans all available package managers (~30-60 seconds first time)
-3. **Explore packages**: Use search, filters, and sorting to find packages
-4. **Take action**: Update, remove, or reinstall packages with one click
-
-**What Happens on Startup**:
-- [`src/main.rs:11-45`](src/main.rs) - Initializes GUI window and starts async scanning
-- Package managers are auto-detected: [`src/managers/detector.rs`](src/managers/detector.rs)
-- Initial scan runs in background: [`src/app.rs:41-179`](src/app.rs)
-
----
-
-## Architecture Highlights
-
-### Modular Design
-
-```
-src/
-├── main.rs                 # Entry point, GUI initialization
-├── app.rs                  # Application state and business logic
-├── models/                 # Data models
-│   ├── package.rs          # Package, PackageManager enums
-│   ├── project.rs          # Project detection models
-│   └── usage.rs            # Package usage tracking
-├── managers/               # Package manager integrations
-│   ├── homebrew_fast.rs    # Homebrew (HTTP API + parallel)
-│   ├── npm.rs              # npm global packages
-│   ├── cargo.rs            # Cargo installed binaries
-│   ├── pip.rs              # pip/pip3 packages
-│   └── detector.rs         # Auto-detect available managers
-├── scanner/                # Project directory scanning
-│   └── project_scanner.rs  # Detect tool usage in projects
-├── ui/                     # GUI components
-│   └── dashboard.rs        # Main dashboard table view
-└── utils/                  # Shared utilities
-    ├── cache.rs            # In-memory caching (DashMap)
-    ├── http_client.rs      # HTTP client with connection pooling
-    └── command.rs          # CLI command execution
-```
-
-### Technology Stack
-
-**Core**:
-- **Language**: Rust 2021 Edition ([`Cargo.toml:3`](Cargo.toml))
-- **GUI Framework**: egui 0.33 + eframe ([`Cargo.toml:8-10`](Cargo.toml))
-- **Async Runtime**: Tokio with full features ([`Cargo.toml:13`](Cargo.toml))
-
-**Performance**:
-- **HTTP Client**: reqwest 0.12 with connection pooling ([`Cargo.toml:17`](Cargo.toml))
-- **Parallel Processing**: Rayon 1.10 ([`Cargo.toml:20`](Cargo.toml))
-- **Caching**: DashMap 6.1 (lock-free concurrent hashmap) ([`Cargo.toml:23`](Cargo.toml))
-
-**Data & Utilities**:
-- **Serialization**: serde + serde_json + toml ([`Cargo.toml:30-32`](Cargo.toml))
-- **File Operations**: walkdir, glob ([`Cargo.toml:35-36`](Cargo.toml))
-- **Error Handling**: anyhow, thiserror ([`Cargo.toml:26-27`](Cargo.toml))
-
-### Async Architecture
-
-**Multi-Runtime Design**:
-- GUI thread runs eframe's event loop (60 FPS)
-- Tokio runtime handles all async I/O operations
-- Background tasks spawn without blocking UI
-
-**Implementation**: [`src/app.rs:14-36`](src/app.rs)
-
-```rust
-pub struct DepMgrApp {
-    pub packages: Arc<RwLock<Vec<Package>>>,  // Shared state
-    pub runtime: tokio::runtime::Runtime,      // Async runtime
-    pub is_scanning: Arc<AtomicBool>,         // Lock-free flag
-    // ...
-}
-```
-
-### Caching Strategy
-
-**Multi-Level Cache**:
-1. **Memory Cache**: DashMap with 1-hour TTL
-2. **HTTP Cache**: Connection pooling reduces API latency by 60-80%
-
-**Implementation**: [`src/utils/cache.rs`](src/utils/cache.rs) and [`src/utils/http_client.rs:5-13`](src/utils/http_client.rs)
-
----
-
-## Screenshots & UI
-
-### Main Dashboard
-
-The main view shows all packages in a unified table with:
-- **Columns**: Name, Manager, Installed Version, Latest Version, Description, Usage, Status, Actions
-- **Filters**: Search by name, filter by manager, show only outdated
-- **Stats Sidebar**: Total packages, outdated count, unused packages
-- **Action Buttons**: Update, Remove, Reinstall for each package
-
-**UI Implementation**: [`src/ui/dashboard.rs:5-292`](src/ui/dashboard.rs)
-
-### Table Features
-
-- **Resizable Columns**: Drag column dividers to adjust width ([`src/ui/dashboard.rs:134-145`](src/ui/dashboard.rs))
-- **Striped Rows**: Alternating colors for readability ([`src/ui/dashboard.rs:135`](src/ui/dashboard.rs))
-- **Color Coding**: 
-  - 🟢 Green: Up-to-date packages
-  - 🟠 Orange: Outdated packages  
-  - 🔴 Red: Unused packages
-
-### Real-Time Updates
-
-- **Incremental Loading**: Packages appear as soon as they're found
-- **Progress Indicators**: Spinners show active operations
-- **Status Messages**: Color-coded feedback (green for success, red for errors)
-
-**Implementation**: [`src/ui/dashboard.rs:71-119`](src/ui/dashboard.rs) - Scanning status and update feedback
-
----
+- **One table, all packages**: See everything from all your package managers
+- **Actually fast**: 30-60 seconds to load everything (used to take 8-10 minutes)
+- **Click to update**: Buttons instead of typing commands
+- **See what's used**: Shows which projects actually use each package
+- **Find orphans**: See what's installed but not used anywhere
 
 ## Performance
 
-### Benchmarks
+The key breakthrough was switching from spawning 83 `brew info` commands (5-7 minutes) to one HTTP call to Homebrew's API (1-3 seconds). Then using Rayon to filter 6,943 formulas in parallel. Full details in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
-| Operation | Old Approach | New Approach | Improvement |
-|-----------|--------------|--------------|-------------|
-| List Homebrew packages | 5-7 minutes (83 × `brew info`) | 1-3 seconds (API call) | **100-200x** |
-| Get descriptions | 3-5 minutes | <10 seconds | **18-30x** |
-| Check outdated | 30-60 seconds | Instant (from API) | **∞** |
-| **Total first load** | **8-10 minutes** | **30-60 seconds** | **10-20x** |
-| Cached load | N/A | <100ms | Instant |
+**Before vs After**:
+- List Homebrew packages: 5-7 min → 1-3 sec (100-200x faster)
+- Total first load: 8-10 min → 30-60 sec (10-20x faster)
+- Cached loads: instant (<100ms)
 
-**Source**: [`docs/worklog.md:353-469`](docs/worklog.md) - Detailed performance transformation notes
+## Install & Run
 
-### Optimization Techniques
+**Prerequisites**: 
+- Rust 1.70+ ([rustup.rs](https://rustup.rs/))
+- macOS (only platform I've tested)
+- At least one package manager (Homebrew, npm, cargo, pip)
 
-1. **HTTP API over Process Spawning**: 100-500x faster than CLI
-2. **Batch Requests**: 1 API call replaces 83+ CLI invocations
-3. **Parallel Processing**: Rayon parallelizes CPU-bound work across all cores
-4. **Connection Pooling**: Reuse HTTP connections for 60-80% latency reduction
-5. **Adaptive Concurrency**: 8 concurrent description fetches (no bottlenecks)
-6. **Memory Caching**: 1-hour TTL avoids redundant API calls
-
-**Implementation References**:
-- Fast Homebrew implementation: [`src/managers/homebrew_fast.rs`](src/managers/homebrew_fast.rs)
-- HTTP client setup: [`src/utils/http_client.rs`](src/utils/http_client.rs)
-- Cache layer: [`src/utils/cache.rs`](src/utils/cache.rs)
-- Parallel filtering: [`src/managers/homebrew_fast.rs:69-87`](src/managers/homebrew_fast.rs)
-
-### Release Optimizations
-
-```toml
-[profile.release]
-opt-level = 3          # Maximum optimization
-lto = true             # Link-time optimization
-codegen-units = 1      # Single codegen unit for better optimization
+**Build**:
+```bash
+git clone <this-repo>
+cd xyz
+cargo build --release
+./target/release/depmgr
 ```
 
-**Source**: [`Cargo.toml:42-45`](Cargo.toml)
+Or just `cargo run` for development builds.
 
----
+## What You'll See
+
+The UI is a table with these columns:
+- **Name**: Package name
+- **Manager**: Which manager it's from (Homebrew, npm, etc.)
+- **Installed**: Version you have
+- **Latest**: Latest available version (if outdated)
+- **Description**: What the package does
+- **Usage**: Which projects use it (or "Unused")
+- **Status**: Current/Outdated (color coded)
+- **Action**: Update/Remove/Reinstall buttons
+
+Plus a sidebar with:
+- Checkboxes to filter by package manager
+- Stats (total, outdated, unused counts)
+- Search box
+- "Refresh" and "Update All" buttons
+
+## Supported Package Managers
+
+| Manager | Status |
+|---------|--------|
+| Homebrew | ✅ Works |
+| npm | ✅ Works |
+| Cargo | ✅ Works |
+| pip | ✅ Works |
+
+That's it. I'll add yarn/pnpm/gem if I ever need them.
+
+## How It Works
+
+**Tech stack**:
+- Rust (fast, no GC pauses)
+- egui/eframe (immediate-mode GUI)
+- Tokio (async runtime)
+- Rayon (parallel processing)
+- reqwest (HTTP client with connection pooling)
+
+**Architecture** (simplified):
+```
+GUI Thread (60 FPS)
+    ↓
+App State (Arc<RwLock<Vec<Package>>>)
+    ↑
+Tokio Runtime (async tasks)
+    ↓
+Package Managers (parallel scanning)
+```
+
+Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+**Key optimizations**:
+1. HTTP API instead of CLI spawning (100-500x faster)
+2. Parallel processing with Rayon (uses all CPU cores)
+3. Connection pooling (60-80% latency reduction)
+4. Memory caching (1-hour TTL)
+
+## Project Structure
+
+```
+src/
+├── main.rs                 # Entry point
+├── app.rs                  # App state & logic
+├── models/                 # Data structures
+│   ├── package.rs          # Package model
+│   ├── project.rs          # Project detection
+│   └── usage.rs            # Usage tracking
+├── managers/               # Package manager integrations
+│   ├── homebrew_fast.rs    # Homebrew (HTTP API)
+│   ├── npm.rs              # npm
+│   ├── cargo.rs            # Cargo
+│   ├── pip.rs              # pip
+│   └── detector.rs         # Auto-detect managers
+├── scanner/                # Project scanning
+│   └── project_scanner.rs  # Find tool usage
+├── ui/                     # GUI
+│   └── dashboard.rs        # Main table UI
+└── utils/                  # Helpers
+    ├── cache.rs            # Memory cache
+    ├── http_client.rs      # HTTP client
+    └── command.rs          # CLI execution
+```
 
 ## Documentation
 
-**Root Documentation**:
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development workflow and contribution guidelines
-
-**Technical Documentation** (`/docs`):
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design, component interactions, data flow
-- **[SETUP.md](docs/SETUP.md)** - Detailed installation, configuration, and troubleshooting
-- **[API.md](docs/API.md)** - Internal API documentation and module reference
-- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Build instructions, distribution, CI/CD
-- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[PERFORMANCE.md](docs/PERFORMANCE.md)** - Detailed performance analysis and benchmarks
-- **[worklog.md](docs/worklog.md)** - Complete development history and decisions
-
----
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System design
+- [`docs/API.md`](docs/API.md) - API reference
+- [`docs/SETUP.md`](docs/SETUP.md) - Installation
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) - Performance details
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) - Common issues
+- [`docs/worklog.md`](docs/worklog.md) - Development history
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - Contributing
 
 ## Development
 
-### Building from Source
-
 ```bash
-# Development build (faster compilation, slower runtime)
-cargo build
-
-# Release build (optimized, slower compilation)
-cargo build --release
-
-# Run directly
+# Build and run
 cargo run
 
-# Run with release optimizations
-cargo run --release
-```
-
-### Code Quality
-
-```bash
-# Type checking
+# Check for errors
 cargo check
 
-# Linting (auto-fix many issues)
+# Lint and auto-fix
 cargo clippy --fix
 
-# Formatting
+# Format code
 cargo fmt
-
-# Run all checks
-cargo check && cargo clippy && cargo fmt
 ```
 
-### Project Structure
+To add a new package manager, see the pattern in `src/managers/npm.rs` or `src/managers/cargo.rs`. Basically:
+1. Create `src/managers/yourmanager.rs`
+2. Implement list/update/check functions
+3. Add to detector
+4. Add to app scan flow
 
-See **[ARCHITECTURE.md](ARCHITECTURE.md)** for detailed component documentation.
-
-### Adding New Package Managers
-
-1. Create new file in `src/managers/` (e.g., `yarn.rs`)
-2. Implement standard functions:
-   - `list_<manager>_packages() -> Result<Vec<Package>>`
-   - `check_outdated_<manager>(&mut [Package]) -> Result<()>`
-   - `update_<manager>_package(name: String) -> Result<()>`
-3. Add to `PackageManager` enum in [`src/models/package.rs:5-18`](src/models/package.rs)
-4. Update detector in [`src/managers/detector.rs`](src/managers/detector.rs)
-5. Add to scan flow in [`src/app.rs:41-179`](src/app.rs)
-
-**Example**: See existing implementations in [`src/managers/npm.rs`](src/managers/npm.rs), [`src/managers/cargo.rs`](src/managers/cargo.rs), or [`src/managers/pip.rs`](src/managers/pip.rs)
-
----
-
-## Roadmap
-
-### Current (v0.1.0)
-- ✅ Homebrew, npm, cargo, pip support
-- ✅ Fast HTTP API + parallel processing
-- ✅ Project usage scanning
-- ✅ Update/remove/reinstall operations
-- ✅ Resizable table UI
-
-### Next (v0.2.0)
-- 🔄 yarn, pnpm, gem support
-- 🔄 Disk cache layer (persist between restarts)
-- 🔄 Background refresh daemon
-- 🔄 Export package lists (JSON, CSV)
-- 🔄 Package dependency graph visualization
-
-### Future (v1.0.0)
-- 🔮 Linux and Windows support
-- 🔮 CLI mode (headless operation)
-- 🔮 Package search and install from UI
-- 🔮 Homebrew cask support (GUI apps)
-- 🔮 Custom package manager plugins
-
----
+Full guide in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-[Add license information here]
+MIT (do whatever you want with it)
 
----
+## Notes
 
-## Acknowledgments
+This is a personal project. No formal roadmap, no screenshots (just run it), no corporate BS. The code is well-documented if you want to understand how it works or add features.
 
-- **egui**: Excellent immediate-mode GUI framework
-- **Homebrew API**: Public formula API enabling fast batch queries
-- **Tokio**: Robust async runtime
-- **Rayon**: Dead-simple data parallelism
-
----
-
-## Support
-
-For issues, questions, or contributions:
-- See **[CONTRIBUTING.md](CONTRIBUTING.md)** for development guidelines
-- See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** for common issues
-- Check **[docs/worklog.md](docs/worklog.md)** for development history
-
----
-
-**Built with ❤️ and Rust 🦀**
-
+If something breaks, check [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) or look at the console output (I log everything with `[DEBUG]`/`[ERROR]` prefixes).

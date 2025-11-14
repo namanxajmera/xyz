@@ -1,12 +1,9 @@
-# API Documentation
+# API Reference
 
-**Internal API reference for DepMgr modules and functions**
+Internal API documentation. For AI assistants working with the code.
 
----
+## Contents
 
-## Table of Contents
-
-- [Overview](#overview)
 - [Module Structure](#module-structure)
 - [Core APIs](#core-apis)
 - [Package Manager APIs](#package-manager-apis)
@@ -15,17 +12,9 @@
 - [Data Models](#data-models)
 - [Type Reference](#type-reference)
 
----
-
 ## Overview
 
-This document provides detailed API documentation for DepMgr's internal modules. This is primarily useful for:
-
-- **AI Engineers**: Understanding code structure for contributions
-- **Extension Developers**: Adding new package managers or features
-- **Maintainers**: Reference for internal APIs and contracts
-
-**Note**: This is not a public API (no crates.io publishing yet). All APIs are internal to the application.
+API reference for all internal modules. Not a public API - just internal application code.
 
 ---
 
