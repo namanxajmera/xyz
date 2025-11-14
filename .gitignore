@@ -1,0 +1,7 @@
+# Claude Code files
+logs/
+.claude/
+
+
+# Added by cargo
+/target
