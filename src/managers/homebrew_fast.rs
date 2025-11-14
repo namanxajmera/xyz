@@ -212,7 +212,7 @@ pub async fn update_package(package_name: String) -> Result<()> {
     use crate::utils::run_command_with_timeout;
     use std::time::Duration;
     
-    println!("[UPDATE] Updating {}...", package_name);
+    println!("[UPDATE] Updating: {}", package_name);
     
     let output = run_command_with_timeout(
         "brew",
@@ -222,7 +222,7 @@ pub async fn update_package(package_name: String) -> Result<()> {
     .await?;
     
     if output.status.success() {
-        println!("[UPDATE] ✓ Successfully updated {}", package_name);
+        println!("[UPDATE] Successfully updated: {}", package_name);
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -235,7 +235,7 @@ pub async fn update_all_packages() -> Result<()> {
     use crate::utils::run_command_with_timeout;
     use std::time::Duration;
     
-    println!("[UPDATE] Updating all outdated packages...");
+    println!("[UPDATE] Updating all outdated packages");
     
     let output = run_command_with_timeout(
         "brew",
@@ -245,11 +245,37 @@ pub async fn update_all_packages() -> Result<()> {
     .await?;
     
     if output.status.success() {
-        println!("[UPDATE] ✓ Successfully updated all packages");
+        println!("[UPDATE] Successfully updated all packages");
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(anyhow!("Failed to update packages: {}", stderr))
+    }
+}
+
+/// Install/Reinstall a package
+pub async fn install_package(package_name: String) -> Result<()> {
+    use crate::utils::run_command_with_timeout;
+    use std::time::Duration;
+    
+    println!("[INSTALL] Installing: {}", package_name);
+    println!("[INSTALL] Running: brew install {}", package_name);
+    
+    let output = run_command_with_timeout(
+        "brew",
+        &["install", &package_name],
+        Duration::from_secs(300), // 5 minutes
+    )
+    .await?;
+    
+    if output.status.success() {
+        println!("[INSTALL] Successfully installed: {}", package_name);
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[INSTALL] Failed to install: {}", package_name);
+        println!("[INSTALL] Error: {}", stderr);
+        Err(anyhow!("Failed to install {}: {}", package_name, stderr))
     }
 }
 
@@ -258,7 +284,8 @@ pub async fn uninstall_package(package_name: String) -> Result<()> {
     use crate::utils::run_command_with_timeout;
     use std::time::Duration;
     
-    println!("[REMOVE] Uninstalling {}...", package_name);
+    println!("[REMOVE] Uninstalling: {}", package_name);
+    println!("[REMOVE] Running: brew uninstall {}", package_name);
     
     let output = run_command_with_timeout(
         "brew",
@@ -268,10 +295,13 @@ pub async fn uninstall_package(package_name: String) -> Result<()> {
     .await?;
     
     if output.status.success() {
-        println!("[REMOVE] ✓ Successfully uninstalled {}", package_name);
+        println!("[REMOVE] Successfully uninstalled: {}", package_name);
+        println!("[REMOVE] Package marked as removed (shows Reinstall button)");
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[REMOVE] Failed to uninstall: {}", package_name);
+        println!("[REMOVE] Error: {}", stderr);
         Err(anyhow!("Failed to uninstall {}: {}", package_name, stderr))
     }
 }

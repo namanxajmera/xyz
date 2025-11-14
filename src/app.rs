@@ -15,6 +15,7 @@ pub struct DepMgrApp {
     pub runtime: tokio::runtime::Runtime,
     pub updating_packages: Arc<RwLock<std::collections::HashSet<String>>>,
     pub update_status: Arc<RwLock<String>>,
+    pub removed_packages: Arc<RwLock<std::collections::HashSet<String>>>, // Track removed packages in this session
 }
 
 impl Default for DepMgrApp {
@@ -31,6 +32,7 @@ impl Default for DepMgrApp {
             runtime: tokio::runtime::Runtime::new().unwrap(),
             updating_packages: Arc::new(RwLock::new(std::collections::HashSet::new())),
             update_status: Arc::new(RwLock::new(String::new())),
+            removed_packages: Arc::new(RwLock::new(std::collections::HashSet::new())),
         }
     }
 }
@@ -201,7 +203,7 @@ impl DepMgrApp {
             match result {
                 Ok(_) => {
                     println!("[INFO] Successfully updated {}", package_name);
-                    *update_status.write().await = format!("✓ Updated {}", package_name);
+                    *update_status.write().await = format!("Updated {}", package_name);
                     
                     // Refresh the package list to get new version
                     if let Ok(mut homebrew_packages) = crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
@@ -212,7 +214,7 @@ impl DepMgrApp {
                 }
                 Err(e) => {
                     eprintln!("[ERROR] Failed to update {}: {}", package_name, e);
-                    *update_status.write().await = format!("✗ Failed to update {}: {}", package_name, e);
+                    *update_status.write().await = format!("Failed to update {}: {}", package_name, e);
                 }
             }
             
@@ -238,7 +240,7 @@ impl DepMgrApp {
             match result {
                 Ok(_) => {
                     println!("[INFO] Successfully updated all packages");
-                    *update_status.write().await = "✓ All packages updated".to_string();
+                    *update_status.write().await = "All packages updated".to_string();
                     
                     // Refresh the package list
                     if let Ok(mut homebrew_packages) = crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
@@ -249,7 +251,7 @@ impl DepMgrApp {
                 }
                 Err(e) => {
                     eprintln!("[ERROR] Failed to update all packages: {}", e);
-                    *update_status.write().await = format!("✗ Failed to update all: {}", e);
+                    *update_status.write().await = format!("Failed to update all: {}", e);
                 }
             }
             
@@ -266,14 +268,63 @@ impl DepMgrApp {
         self.updating_packages.blocking_read().contains(package_name)
     }
     
+    pub fn is_removed(&self, package_name: &str) -> bool {
+        self.removed_packages.blocking_read().contains(package_name)
+    }
+    
     pub fn get_update_status(&self) -> String {
         self.update_status.blocking_read().clone()
+    }
+    
+    pub fn reinstall_package(&mut self, package_name: String, manager: PackageManager) {
+        let updating_packages = Arc::clone(&self.updating_packages);
+        let update_status = Arc::clone(&self.update_status);
+        let removed_packages = Arc::clone(&self.removed_packages);
+        
+        self.runtime.spawn(async move {
+            // Mark as updating
+            updating_packages.write().await.insert(package_name.clone());
+            *update_status.write().await = format!("Reinstalling {}...", package_name);
+            
+            let pkg_name = package_name.clone();
+            let result = match manager {
+                PackageManager::Homebrew => {
+                    // Use brew install to reinstall
+                    crate::managers::homebrew_fast::install_package(pkg_name).await
+                }
+                _ => {
+                    Err(anyhow::anyhow!("Reinstall not implemented for this package manager"))
+                }
+            };
+            
+            match result {
+                Ok(_) => {
+                    println!("[APP] Successfully reinstalled {}", package_name);
+                    
+                    // Remove from removed set
+                    removed_packages.write().await.remove(&package_name);
+                    
+                    *update_status.write().await = format!("{} reinstalled", package_name);
+                }
+                Err(e) => {
+                    eprintln!("[APP] Failed to reinstall {}: {}", package_name, e);
+                    *update_status.write().await = format!("Failed to reinstall {}: {}", package_name, e);
+                }
+            }
+            
+            // Remove from updating set
+            updating_packages.write().await.remove(&package_name);
+            
+            // Clear status after a delay
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            *update_status.write().await = String::new();
+        });
     }
     
     pub fn uninstall_package(&mut self, package_name: String, manager: PackageManager) {
         let updating_packages = Arc::clone(&self.updating_packages);
         let update_status = Arc::clone(&self.update_status);
-        let packages = Arc::clone(&self.packages);
+        let removed_packages = Arc::clone(&self.removed_packages);
         
         self.runtime.spawn(async move {
             // Mark as updating/processing
@@ -292,19 +343,16 @@ impl DepMgrApp {
             
             match result {
                 Ok(_) => {
-                    println!("[INFO] Successfully removed {}", package_name);
-                    *update_status.write().await = format!("✓ Removed {}", package_name);
+                    println!("[APP] Successfully removed {}", package_name);
                     
-                    // Refresh the package list
-                    if let Ok(mut homebrew_packages) = crate::managers::homebrew_fast::list_homebrew_packages_fast().await {
-                        if let Ok(()) = crate::managers::homebrew_fast::check_outdated_packages_fast(&mut homebrew_packages).await {
-                            *packages.write().await = homebrew_packages;
-                        }
-                    }
+                    // Mark as removed (stays in table with "Reinstall" button)
+                    removed_packages.write().await.insert(package_name.clone());
+                    
+                    *update_status.write().await = format!("{} removed (click Reinstall to undo)", package_name);
                 }
                 Err(e) => {
-                    eprintln!("[ERROR] Failed to remove {}: {}", package_name, e);
-                    *update_status.write().await = format!("✗ Failed to remove {}: {}", package_name, e);
+                    eprintln!("[APP] Failed to remove {}: {}", package_name, e);
+                    *update_status.write().await = format!("Failed to remove {}: {}", package_name, e);
                 }
             }
             

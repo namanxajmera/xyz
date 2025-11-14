@@ -77,20 +77,27 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                 ctx.request_repaint();
             }
             
-            // Show update status
+            // Show update status - full width, natural wrapping
             let update_status = app.get_update_status();
             if !update_status.is_empty() {
                 ui.horizontal(|ui| {
                     if update_status.contains("...") {
                         ui.spinner();
                     }
-                    if update_status.starts_with("✓") {
-                        ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(0, 200, 0)));
-                    } else if update_status.starts_with("✗") {
-                        ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(255, 0, 0)));
-                    } else {
-                        ui.label(&update_status);
-                    }
+                    
+                    // Use full available width for status messages
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
+                        ui.set_width(ui.available_width());
+                        
+                        // Color based on message type
+                        if update_status.contains("Failed") || update_status.contains("failed") {
+                            ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(255, 0, 0)));
+                        } else if update_status.contains("removed") || update_status.contains("updated") || update_status.contains("reinstalled") {
+                            ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(0, 200, 0)));
+                        } else {
+                            ui.label(&update_status);
+                        }
+                    });
                 });
                 ui.separator();
                 ctx.request_repaint();
@@ -179,26 +186,38 @@ pub fn show_dashboard(ctx: &egui::Context, app: &mut DepMgrApp) {
                                 // Status
                                 row.col(|ui| {
                                     if pkg.is_outdated {
-                                        ui.label(egui::RichText::new("⚠️ Outdated").color(egui::Color32::from_rgb(255, 165, 0)));
+                                        ui.label(egui::RichText::new("Outdated").color(egui::Color32::from_rgb(255, 165, 0)));
                                     } else {
-                                        ui.label(egui::RichText::new("✓ Current").color(egui::Color32::from_rgb(0, 200, 0)));
+                                        ui.label(egui::RichText::new("Current").color(egui::Color32::from_rgb(0, 200, 0)));
                                     }
                                 });
                                 
                                 // Action buttons
                                 row.col(|ui| {
                                     ui.horizontal(|ui| {
-                                        if pkg.is_outdated {
-                                            let is_updating = app.is_updating(&pkg.name);
-                                            if is_updating {
-                                                ui.spinner();
-                                            } else if ui.button("Update").clicked() {
-                                                app.update_package(pkg.name.clone(), pkg.manager.clone());
-                                            }
-                                        }
+                                        let is_updating = app.is_updating(&pkg.name);
+                                        let is_removed = app.is_removed(&pkg.name);
                                         
-                                        if ui.button("Remove").clicked() {
-                                            app.uninstall_package(pkg.name.clone(), pkg.manager.clone());
+                                        if is_updating {
+                                            ui.spinner();
+                                        } else {
+                                            if pkg.is_outdated && !is_removed {
+                                                if ui.button("Update").clicked() {
+                                                    app.update_package(pkg.name.clone(), pkg.manager.clone());
+                                                }
+                                            }
+                                            
+                                            if is_removed {
+                                                // Show "Reinstall" for removed packages
+                                                if ui.button("Reinstall").clicked() {
+                                                    app.reinstall_package(pkg.name.clone(), pkg.manager.clone());
+                                                }
+                                            } else {
+                                                // Show "Remove" for installed packages
+                                                if ui.button("Remove").clicked() {
+                                                    app.uninstall_package(pkg.name.clone(), pkg.manager.clone());
+                                                }
+                                            }
                                         }
                                     });
                                 });

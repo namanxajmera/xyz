@@ -2,6 +2,159 @@
 
 *This file serves as a running AI development diary. Always append new entries to the TOP.*
 
+## 2025-11-14 03:25:45 UTC
+
+**Project**: xyz
+**Activity**: UI polish - Removed all decorative symbols, added reinstall functionality
+**What**: Clean, professional UI without emojis/boxes + packages stay in table after removal with reinstall option
+**Details**:
+
+### **1. Clean UI - Removed All Decorative Symbols**
+
+**User Feedback**: "Remove all stupid square boxes and stuff from error messages, success messages, and stuff"
+
+**What Was Removed**:
+- All box drawing characters: `━━━━━━━━━━━━━━━━━━`
+- All emojis: `🗑️` (trash), `📦` (package), `✓` (checkmark), `✗` (x-mark), `⚠️` (warning)
+- All decorative symbols from both logs AND UI status messages
+
+**Before**:
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[REMOVE] 🗑️  Uninstalling: wget
+[REMOVE] ✓ Successfully uninstalled: wget
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ wget removed (click Reinstall to undo)
+```
+
+**After**:
+```
+[REMOVE] Uninstalling: wget
+[REMOVE] Running: brew uninstall wget
+[REMOVE] Successfully uninstalled: wget
+wget removed (click Reinstall to undo)
+```
+
+**Files Changed**:
+- `src/managers/homebrew_fast.rs` - Cleaned all log messages
+- `src/app.rs` - Cleaned all UI status messages
+- `src/ui/dashboard.rs` - Removed emoji icons from Status column
+
+**Result**: Clean, professional logs and UI messages. Just plain text with clear prefixes.
+
+### **2. Status Column Icon Cleanup**
+
+**Before**:
+- ⚠️ Outdated (orange)
+- ✓ Current (green)
+
+**After**:
+- Outdated (orange)
+- Current (green)
+
+**Why**: Color alone is sufficient to distinguish status - cleaner UI without visual noise.
+
+### **3. Remove/Reinstall Functionality**
+
+**User Feedback**: "After removing, packages disappear only when I close/reopen. Keep them in the list but change Remove to Reinstall"
+
+**Implementation**:
+- Added `removed_packages: Arc<RwLock<HashSet<String>>>` to track removed packages in current session
+- Packages stay in table after removal (don't disappear immediately)
+- "Remove" button changes to "Reinstall" after successful removal
+- "Update" button hidden for removed packages
+- Added `install_package()` function in `homebrew_fast.rs`
+- Added `reinstall_package()` method in app
+
+**Flow**:
+1. Click "Remove" → Package uninstalled via `brew uninstall`
+2. Package stays in table, button changes to "Reinstall"
+3. Status: "package-name removed (click Reinstall to undo)"
+4. Click "Reinstall" → Package installed via `brew install`
+5. Button changes back to "Remove", package restored
+6. On app restart → Only actually installed packages show
+
+**Safety Net**: Accidentally removed something? Just click "Reinstall" to restore it instantly!
+
+**Files Changed**:
+- `src/app.rs` - Added `removed_packages`, `is_removed()`, `reinstall_package()`
+- `src/managers/homebrew_fast.rs` - Added `install_package()` function
+- `src/ui/dashboard.rs` - Button logic: show "Reinstall" if removed, else "Remove"
+
+**Logging**:
+```
+[REMOVE] Uninstalling: wget
+[REMOVE] Successfully uninstalled: wget
+[REMOVE] Package marked as removed (shows Reinstall button)
+[APP] Successfully removed wget
+
+[INSTALL] Installing: wget
+[INSTALL] Running: brew install wget
+[INSTALL] Successfully installed: wget
+[APP] Successfully reinstalled wget
+```
+
+### **4. Full-Width Status Messages**
+
+**User Feedback**: Long error messages were wrapping prematurely/forcefully, making them hard to read
+
+**Problem**: Status messages like dependency errors were wrapping artificially:
+```
+Failed to remove brotli: Failed to 
+uninstall brotli: Error: Refusing 
+to uninstall /opt/homebrew/Cellar/
+brotli/1.2.0...
+```
+
+**Solution**:
+- `ui.set_width(ui.available_width())` - Uses full horizontal space
+- `with_main_wrap(true)` - Natural wrapping only when hitting window edge
+- Status messages now display on one line until they truly need to wrap
+
+**Result**: Long error messages (like dependency conflicts) are now readable on one line.
+
+### **5. Smart Color Coding (Symbol-Free)**
+
+**New Logic** (no symbols needed):
+- **Red text**: Messages containing "Failed" or "failed"
+- **Green text**: Messages containing "removed", "updated", "reinstalled"
+- **Default text**: Everything else (scanning, in-progress)
+
+**Code**:
+```rust
+if update_status.contains("Failed") || update_status.contains("failed") {
+    ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(255, 0, 0)));
+} else if update_status.contains("removed") || update_status.contains("updated") || update_status.contains("reinstalled") {
+    ui.label(egui::RichText::new(&update_status).color(egui::Color32::from_rgb(0, 200, 0)));
+} else {
+    ui.label(&update_status);
+}
+```
+
+### **User Experience Impact**
+
+**Before Session**:
+- Status column cluttered with emojis
+- Logs filled with decorative boxes
+- Removed packages disappeared immediately (confusing)
+- Long error messages hard to read (premature wrapping)
+
+**After Session**:
+- Clean, professional UI
+- Readable logs without visual noise
+- Safety net: can undo removals with one click
+- Full-width messages that wrap naturally
+
+### **Code Quality**
+- Zero new warnings
+- All functionality tested and working
+- Clear separation of concerns
+- Proper state management with Arc<RwLock<HashSet>>
+
+**Next**: Consider adding confirmation dialogs for destructive actions (optional safety)
+
+---
+
 ## 2025-11-14 03:10:12 UTC
 
 **Project**: xyz
